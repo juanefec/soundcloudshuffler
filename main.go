@@ -6,6 +6,8 @@ import (
 	"io/ioutil"
 	"log"
 	"math/rand"
+	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/faiface/beep"
@@ -29,34 +31,50 @@ func main() {
 		log.Fatal(err.Error())
 	}
 
-	ls, err := sc.GetLikes(scp.GetLikesOptions{
-		ID:    user.ID,
-		Type:  "track",
-		Limit: 20,
-	})
-
-	if err != nil {
-		log.Fatal(err.Error())
-	}
-
-	likes, err := ls.GetLikes()
-	if err != nil {
-		log.Fatal(err.Error())
-	}
+	likes := getAllLikes(sc, user, 0)
 
 	log.Printf("%v likes to play on shuffle:\n", len(likes))
 	for _, like := range likes {
 		fmt.Println(like.Track.Title)
 	}
 
-	next := rand.Intn(len(likes) - 1)
 	for {
+		next := rand.Intn(len(likes) - 1)
+
 		log.Printf("Playing: %v\n", likes[next].Track.Title)
 
 		play(sc, likes[next].Track.Media.Transcodings[0])
-		next = rand.Intn(len(likes) - 1)
+	}
+}
+
+func getAllLikes(sc *scp.API, user scp.User, offset int) []scp.Like {
+	ls, err := sc.GetLikes(scp.GetLikesOptions{
+		ID:     user.ID,
+		Type:   "track",
+		Limit:  200,
+		Offset: offset,
+	})
+	if err != nil {
+		log.Fatal(err.Error())
 	}
 
+	l, err := ls.GetLikes()
+	if err != nil {
+		log.Fatal(err.Error())
+	}
+	log.Println(ls.NextHref)
+	if ls.NextHref != "" {
+		url, err := url.Parse(ls.NextHref)
+		if err != nil {
+			log.Fatal(err.Error())
+		}
+		off, err := strconv.Atoi(url.Query()["offset"][0])
+		if err != nil {
+			log.Fatal(err.Error())
+		}
+		l = append(l, getAllLikes(sc, user, off)...)
+	}
+	return l
 }
 
 func play(sc *scp.API, t scp.Transcoding) error {
